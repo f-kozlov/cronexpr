@@ -144,6 +144,79 @@ func Parse(cronLine string) (*Expression, error) {
 	return &expr, nil
 }
 
+
+func (expr *Expression) Prev(fromTime time.Time) time.Time {
+	// Special case
+	if fromTime.IsZero() {
+		return fromTime
+	}
+
+	// year
+	v := fromTime.Year()
+	i := sort.SearchInts(expr.yearList, v)
+	if i == 0 && expr.yearList[i] != v {
+		return time.Time{} // the current year is earlier than the earliest accceptable year, return empty
+	}
+	if i==len(expr.yearList) || v != expr.yearList[i] { // if the current year is not a listed one (but there are previous years)
+		return expr.prevYear(fromTime)
+	}
+	// month
+	v = int(fromTime.Month())
+	i = sort.SearchInts(expr.monthList, v)
+	if i == 0 && expr.monthList[i] != v { // if the current month is earlier than earliest acceptable month
+		return expr.prevYear(fromTime)
+	}
+	if i==len(expr.monthList) || v != expr.monthList[i] { // if the current month is not a listed one (but there are previous months)
+		return expr.prevMonth(fromTime)
+	}
+
+	expr.actualDaysOfMonthList = expr.calculateActualDaysOfMonth(fromTime.Year(), int(fromTime.Month()))
+	if len(expr.actualDaysOfMonthList) == 0 { // if no day in this month is allowed, make it prev month
+		return expr.prevMonth(fromTime)
+	}
+
+	// day of month
+	v = fromTime.Day()
+	i = sort.SearchInts(expr.actualDaysOfMonthList, v)
+	if i == 0 && expr.actualDaysOfMonthList[i] != v { // if the current day is earlier than this month's valid days, make it prev month
+		return expr.prevMonth(fromTime)
+	}
+	if i==len(expr.actualDaysOfMonthList) || v != expr.actualDaysOfMonthList[i] { // if the current day is not a valid day, but there are previous days in this month
+		return expr.prevDayOfMonth(fromTime)
+	}
+
+	// hour
+	v = fromTime.Hour()
+	i = sort.SearchInts(expr.hourList, v)
+	if i == 0 && expr.hourList[i] != v { // the current hour is earlier than any hour available today
+		return expr.prevDayOfMonth(fromTime)
+	}
+	if i==len(expr.hourList) || v != expr.hourList[i] { // the current hour is not valid, but there are earlier hours available
+		return expr.prevHour(fromTime)
+	}
+	// minute
+	v = fromTime.Minute()
+	i = sort.SearchInts(expr.minuteList, v)
+	if i == 0 && expr.minuteList[i] != v { // the current minute is earlier than any minute available in this hour
+		return expr.prevHour(fromTime)
+	}
+	if i==len(expr.minuteList) || v != expr.minuteList[i] { // the current minute is not valid, but there are previous minutes available
+		return expr.prevMinute(fromTime)
+	}
+	// second
+	v = fromTime.Second()
+	i = sort.SearchInts(expr.secondList, v)
+	if i == 0 && expr.secondList[i] != v { // the current second is earlier than any second available this minute
+		return expr.prevMinute(fromTime)
+	}
+
+	// If we reach this point, there is nothing better to do
+	// than to move to the previous second
+
+	return expr.prevSecond(fromTime)
+}
+
+
 /******************************************************************************/
 
 // Next returns the closest time instant immediately following `fromTime` which
